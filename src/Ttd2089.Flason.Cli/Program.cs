@@ -1,4 +1,4 @@
-﻿using System;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Ttd2089.Flason;
@@ -8,21 +8,31 @@ using Rfc6901ReferenceTokenType = Ttd2089.Flason.Rfc6901.ReferenceTokenType;
 
 class Program
 {
-    static void Main()
+    private static readonly StreamWriter streamyBoi = new(Stream.Null, Encoding.UTF8);
+
+    public static async Task Main()
     {
+        Console.OutputEncoding = Encoding.UTF8;
         using var stdin = Console.OpenStandardInput();
+        var sw = Stopwatch.StartNew();
+        // Get this file for similar benching
+        //var file = File.OpenRead("F:\\RandomCode\\AllPrintings.json");
+
+
         var jsonTokenReader = new JsonTokenReader(stdin, new()
         {
-            InitialBufferSize = 8,
+            InitialBufferSize = 4096,
             CommentHandling = JsonCommentHandling.Skip,
         });
 
-        WriteFlason(jsonTokenReader);
+        //Console.WriteLine("Starting");
+        await WriteFlason(jsonTokenReader);
+        //Console.WriteLine($"Finished in: {sw.Elapsed.TotalSeconds}");
     }
 
-    static void WriteFlason(JsonTokenReader reader) => WriteFlason(reader, new(), reader.Next());
+    static async ValueTask WriteFlason(JsonTokenReader reader) => await WriteFlason(reader, new(), await reader.NextAsync());
 
-    static void WriteFlason(JsonTokenReader reader, Stack<Rfc6901ReferenceToken> jsonPointer, JsonToken? nextToken)
+    static async ValueTask WriteFlason(JsonTokenReader reader, Stack<Rfc6901ReferenceToken> jsonPointer, JsonToken? nextToken)
     {
         if (nextToken is not JsonToken token)
         {
@@ -32,10 +42,10 @@ class Program
         switch (token.Type)
         {
             case JsonTokenType.StartArray:
-                WriteFlasonArray(reader, jsonPointer);
+                await WriteFlasonArray(reader, jsonPointer);
                 break;
             case JsonTokenType.StartObject:
-                WriteFlasonObject(reader, jsonPointer);
+                await WriteFlasonObject(reader, jsonPointer);
                 break;
             default:
                 WriteFlasonScalar(jsonPointer, token);
@@ -43,9 +53,9 @@ class Program
         }
     }
 
-    static void WriteFlasonObject(JsonTokenReader reader, Stack<Rfc6901ReferenceToken> jsonPointer)
+    static async ValueTask WriteFlasonObject(JsonTokenReader reader, Stack<Rfc6901ReferenceToken> jsonPointer)
     {
-        while (reader.Next() is JsonToken token && token.Type != JsonTokenType.EndObject)
+        while (await reader.NextAsync() is JsonToken token && token.Type != JsonTokenType.EndObject)
         {
             var propertyReferenceToken = new Rfc6901ReferenceToken(
                 Rfc6901ReferenceTokenType.Property,
@@ -53,20 +63,20 @@ class Program
 
             jsonPointer.Push(propertyReferenceToken);
 
-            WriteFlason(reader, jsonPointer, reader.Next());
+            await WriteFlason(reader, jsonPointer, await reader.NextAsync());
 
             jsonPointer.Pop();
         }
     }
 
-    static void WriteFlasonArray(JsonTokenReader reader, Stack<Rfc6901ReferenceToken> jsonPointer)
+    static async ValueTask WriteFlasonArray(JsonTokenReader reader, Stack<Rfc6901ReferenceToken> jsonPointer)
     {
         var index = 0;
-        while (reader.Next() is JsonToken token && token.Type != JsonTokenType.EndArray)
+        while (await reader.NextAsync() is JsonToken token && token.Type != JsonTokenType.EndArray)
         {
             var indexReferenceToken = new Rfc6901ReferenceToken(Rfc6901ReferenceTokenType.Index, $"{index}");
             jsonPointer.Push(indexReferenceToken);
-            WriteFlason(reader, jsonPointer, token);
+            await WriteFlason(reader, jsonPointer, token);
             jsonPointer.Pop();
             ++index;
         }
@@ -81,5 +91,7 @@ class Program
         // todo: For some reason this wont print the '𝄞' character in pwsh. The bytes are correct so I THINK it's a
         // a problem with the terminal/font but I'm not 100% sure.
         Console.WriteLine($"\"{new Rfc6901JsonPointer(jsonPointer.Reverse())}\": {jsonValue}");
+        // So that we can get console write times out of the bench
+        //streamyBoi.Write($"\"{new Rfc6901JsonPointer(jsonPointer.Reverse())}\": {jsonValue}");
     }
 }

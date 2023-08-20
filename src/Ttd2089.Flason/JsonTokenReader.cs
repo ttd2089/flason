@@ -1,4 +1,6 @@
-﻿using System.Text.Json;
+﻿using System.Buffers;
+using System.IO.Pipelines;
+using System.Text.Json;
 
 namespace Ttd2089.Flason;
 
@@ -7,13 +9,7 @@ namespace Ttd2089.Flason;
 /// </summary>
 public sealed class JsonTokenReader
 {
-    private readonly Stream _stream;
-
-    private byte[] _buffer;
-
-    private ReadOnlyMemory<byte> _bufferView;
-    private int _bufferViewStartOffset;
-
+    private readonly PipeReader _pipe;
     private JsonReaderState _readerState;
 
     public JsonTokenReader(Stream stream, JsonTokenReaderOptions options)
@@ -25,9 +21,7 @@ public sealed class JsonTokenReader
                 nameof(options));
         }
 
-        _stream = stream;
-
-        _buffer = new byte[options.InitialBufferSize];
+        _pipe = PipeReader.Create(stream, new());
 
         _readerState = new JsonReaderState(new JsonReaderOptions()
         {
@@ -37,43 +31,39 @@ public sealed class JsonTokenReader
         });
     }
 
-    public JsonToken? Next()
+    public async ValueTask<JsonToken?> NextAsync(CancellationToken token = default)
     {
-        while (true)
+        var read = default(ReadResult);
+        while (!token.IsCancellationRequested)
         {
-            // Check the buffer first to ensure we get all the JSON tokens from the last stream
-            // read before reading again or shifting the buffer data forward.
-            if (ReadNextTokenFromBuffer() is JsonToken token)
+            read = await _pipe.ReadAsync(token);
+
+            if (read.IsCanceled || read.IsCompleted)
+                return null;
+
+            if (ReadNextTokenYouShit(read.Buffer) is (long sz, JsonToken tokeyboi))
             {
-                return token;
+                // This is saying we've consumed up to the end read size we got from reader
+                _pipe.AdvanceTo(read.Buffer.GetPosition(sz));
+                return tokeyboi;
             }
 
-            if (!ReadStreamIntoBuffer())
-            {
-                return null;
-            }
+            // This advances the "consumed" and the "observed" locations
+            // by saying we've *seen* the whole buffer but only consumed to the beginning
+            // of the current span. This will get it to load up to the buffer max size again.
+            _pipe.AdvanceTo(read.Buffer.Start, read.Buffer.End);
         }
+
+        return null;
     }
 
-    private JsonToken? ReadNextTokenFromBuffer()
+    public ValueTuple<long, JsonToken>? ReadNextTokenYouShit(ReadOnlySequence<byte> bytes)
     {
-        // Reading an empty buffer throws an exception because it doesn't contain valid JSON. We'll
-        // try again after we load more data from the stream.
-        if (_bufferView.Length == 0)
-        {
-            return null;
-        }
-
-        var reader = new Utf8JsonReader(_bufferView.Span, isFinalBlock: false, _readerState);
-
+        var reader = new Utf8JsonReader(bytes, isFinalBlock: false, _readerState);
         var read = reader.Read();
-
-        _bufferView = _bufferView[(int)reader.BytesConsumed..];
-        _bufferViewStartOffset += (int)reader.BytesConsumed;
-
         _readerState = reader.CurrentState;
 
-        return read ? GetTokenFromReader(reader) : null;
+        return read ? (reader.BytesConsumed, GetTokenFromReader(reader)) : null;
     }
 
     private static JsonToken GetTokenFromReader(Utf8JsonReader reader) => new(
@@ -81,41 +71,4 @@ public sealed class JsonTokenReader
         value: reader.ValueSpan,
         depth: reader.CurrentDepth,
         valueIsEscaped: reader.ValueIsEscaped);
-
-    private bool ReadStreamIntoBuffer()
-    {
-        if (BufferIsFull())
-        {
-            if (BufferContainsAlreadyConsumedData())
-            {
-                ShiftUnconsumedDataToFrontOfBuffer();
-            }
-            else
-            {
-                Array.Resize(ref _buffer, _buffer.Length * 2);
-            }
-        }
-
-        var read = _stream.Read(_buffer.AsSpan(_bufferView.Length..));
-        if (read == 0)
-        {
-            return false;
-        }
-
-        var newBufferViewLength = _bufferView.Length + read;
-        _bufferView = _buffer[..newBufferViewLength];
-
-        return true;
-    }
-
-    private bool BufferIsFull() => _bufferViewStartOffset + _bufferView.Length == _buffer.Length;
-
-    private bool BufferContainsAlreadyConsumedData() => _bufferViewStartOffset > 0;
-
-    private void ShiftUnconsumedDataToFrontOfBuffer()
-    {
-        _bufferView.CopyTo(_buffer);
-        _bufferView = _buffer[.._bufferView.Length];
-        _bufferViewStartOffset = 0;
-    }
 }
