@@ -1,0 +1,38 @@
+{
+    "true": true,
+    "false": false,
+    "null": null,
+    "number": 3.14,
+    "string": "three point one four",
+    "simple_object": {
+        "foo": "FOO",
+        "bar": "BAR"
+    },
+    "simple_array": [
+        "zero",
+        "one",
+        "two"
+    ],
+    "escape_sequences": {
+        "quotation_mark": "\"",
+        "reverse_solidus": "\\",
+        "solidus": "\/",
+        "backspace": "\b",
+        "form_feed": "\f",
+        "line_feed": "\n",
+        "carriage_return": "\r",
+        "tab": "\t",
+        "reverse_solidus_codepoint": "\u005C",
+        "g_clef_codepoint": "\uD834\uDD1E"
+    },
+    "g_clef": "𝄞",
+    "unusual_property_names": {
+        "": "Empty string",
+        "~": "Tilde",
+        "/": "Solidus",
+        "\"": "Quotation mark",
+        ":": "Colon",
+        "𝄢": "F clef",
+        "\uD834\uDD1E": "G clef codepoint"
+    }
+}

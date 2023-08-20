@@ -1,0 +1,28 @@
+"/true": true
+"/false": false
+"/null": null
+"/number": 3.14
+"/string": "three point one four"
+"/simple_object/foo": "FOO"
+"/simple_object/bar": "BAR"
+"/simple_array/0": "zero"
+"/simple_array/1": "one"
+"/simple_array/2": "two"
+"/escape_sequences/quotation_mark": "\""
+"/escape_sequences/reverse_solidus": "\\"
+"/escape_sequences/solidus": "\/"
+"/escape_sequences/backspace": "\b"
+"/escape_sequences/form_feed": "\f"
+"/escape_sequences/line_feed": "\n"
+"/escape_sequences/carriage_return": "\r"
+"/escape_sequences/tab": "\t"
+"/escape_sequences/reverse_solidus_codepoint": "\u005C"
+"/escape_sequences/g_clef_codepoint": "\uD834\uDD1E"
+"/g_clef": "𝄞"
+"/unusual_property_names/": "Empty string"
+"/unusual_property_names/~0": "Tilde"
+"/unusual_property_names/~1": "Solidus"
+"/unusual_property_names/\"": "Quotation mark"
+"/unusual_property_names/:": "Colon"
+"/unusual_property_names/𝄢": "F clef"
+"/unusual_property_names/\uD834\uDD1E": "G clef codepoint"
