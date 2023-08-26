@@ -4,7 +4,7 @@ foreach($test in $tests)
     $expectationFile = $test.FullName -Replace ".json$", ".flason"
     
     $expected = Get-Content $expectationFile
-    $actual = Get-Content $test | dotnet run --project "$PSScriptRoot/../../src/Ttd2089.Flason.Cli"
+    $actual = Get-Content $test | dotnet run --project "$PSScriptRoot/../../src/Ttd2089.Flason.Cli" -- -
 
     Compare-Object $expected $actual
 }

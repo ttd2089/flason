@@ -1,4 +1,6 @@
-﻿using System.Text.Json;
+﻿using System.Text;
+using System.Text.Json;
+using System.Threading.Channels;
 
 namespace Ttd2089.Flason;
 
@@ -7,6 +9,7 @@ namespace Ttd2089.Flason;
 /// </summary>
 public sealed class JsonTokenReader
 {
+    private readonly ChannelWriter<JsonToken> _channel;
     private readonly Stream _stream;
 
     private byte[] _buffer;
@@ -16,7 +19,9 @@ public sealed class JsonTokenReader
 
     private JsonReaderState _readerState;
 
-    public JsonTokenReader(Stream stream, JsonTokenReaderOptions options)
+    private readonly Queue<string> _shits;
+
+    public JsonTokenReader(ChannelWriter<JsonToken> channel, Stream stream, JsonTokenReaderOptions options)
     {
         if (options.InitialBufferSize == 0)
         {
@@ -25,6 +30,7 @@ public sealed class JsonTokenReader
                 nameof(options));
         }
 
+        _channel = channel;
         _stream = stream;
 
         _buffer = new byte[options.InitialBufferSize];
@@ -35,9 +41,11 @@ public sealed class JsonTokenReader
             CommentHandling = options.CommentHandling,
             MaxDepth = options.MaxDepth,
         });
+
+        _shits = new Queue<string>();
     }
 
-    public JsonToken? Next()
+    public void Run()
     {
         while (true)
         {
@@ -45,12 +53,14 @@ public sealed class JsonTokenReader
             // read before reading again or shifting the buffer data forward.
             if (ReadNextTokenFromBuffer() is JsonToken token)
             {
-                return token;
+                _channel.TryWrite(token);
+                continue;
             }
 
             if (!ReadStreamIntoBuffer())
             {
-                return null;
+                _channel.Complete();
+                return;
             }
         }
     }
@@ -64,10 +74,25 @@ public sealed class JsonTokenReader
             return null;
         }
 
+
         var reader = new Utf8JsonReader(_bufferView.Span, isFinalBlock: false, _readerState);
-
-        var read = reader.Read();
-
+        bool read = false;
+        try
+        {
+            read = reader.Read();
+        }
+        catch (Exception ex)
+        {
+            int i = 0;
+            Console.Error.WriteLine(ex.Message);
+            Console.Error.WriteLine(Encoding.UTF8.GetString(_bufferView.Span));
+            foreach (var shit in _shits)
+            {
+                Console.Error.WriteLine($"  SHIT: {shit}");
+            }
+            return null;
+            //Environment.Exit(0); // TEMP
+        }
         _bufferView = _bufferView[(int)reader.BytesConsumed..];
         _bufferViewStartOffset += (int)reader.BytesConsumed;
 
@@ -102,8 +127,14 @@ public sealed class JsonTokenReader
             return false;
         }
 
+        _shits.Enqueue(Encoding.UTF8.GetString(_bufferView.Span));
+        while (_shits.Count > 5)
+        {
+            _shits.Dequeue();
+        }
+
         var newBufferViewLength = _bufferView.Length + read;
-        _bufferView = _buffer[..newBufferViewLength];
+        _bufferView = _buffer.AsMemory()[..newBufferViewLength];
 
         return true;
     }
@@ -115,7 +146,7 @@ public sealed class JsonTokenReader
     private void ShiftUnconsumedDataToFrontOfBuffer()
     {
         _bufferView.CopyTo(_buffer);
-        _bufferView = _buffer[.._bufferView.Length];
+        _bufferView = _buffer.AsMemory()[.._bufferView.Length];
         _bufferViewStartOffset = 0;
     }
 }

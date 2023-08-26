@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using System.Text;
 using System.Text.Json;
 
 namespace Ttd2089.Flason;
@@ -40,4 +41,5 @@ public readonly record struct JsonToken
     /// <see cref="JsonTokenType.String"/> or <see cref="JsonTokenType.PropertyName"/>.
     /// </remarks>
     public required bool ContainsEscapeSequences { get; init; }
+    public string Text => Encoding.UTF8.GetString(Utf8ValueBytes);
 }
