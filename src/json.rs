@@ -40,7 +40,7 @@ impl<R: Read> Tokenizer<R> {
         }
     }
 
-    fn parse_single_char_token(&mut self) -> Option<JsonToken> {
+    fn parse_single_char_token<'a>(&mut self) -> Option<JsonToken<'a>> {
         if let Some(tok) = match self.buf[self.read_pos] {
             b'[' => Some(JsonToken::BeginArray),
             b']' => Some(JsonToken::EndArray),
