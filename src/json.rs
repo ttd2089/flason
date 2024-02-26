@@ -48,18 +48,23 @@ impl<R: Read> Tokenizer<R> {
             Ok(true) => (),
         }
 
-        if let Some(tok) = Self::single_byte_token(self.buf[self.read_pos]) {
-            self.read_pos += 1;
-            return Some(Ok(tok));
+        match self.buf[self.read_pos] {
+            b'[' => return Some(self.parse_literal("[", JsonToken::BeginArray)),
+            b']' => return Some(self.parse_literal("]", JsonToken::EndArray)),
+            b'{' => return Some(self.parse_literal("{", JsonToken::BeginObject)),
+            b'}' => return Some(self.parse_literal("}", JsonToken::EndObject)),
+            b':' => return Some(self.parse_literal(":", JsonToken::Colon)),
+            b',' => return Some(self.parse_literal(",", JsonToken::Comma)),
+            b't' => return Some(self.parse_literal("true", JsonToken::True)),
+            b'f' => return Some(self.parse_literal("false", JsonToken::False)),
+            b'n' => return Some(self.parse_literal("null", JsonToken::Null)),
+            _ => (),
         }
 
-        Some(match self.buf[self.read_pos] {
-            b't' => self.parse_literal("true", JsonToken::True),
-            b'f' => self.parse_literal("false", JsonToken::False),
-            b'n' => self.parse_literal("null", JsonToken::Null),
-            // todo: Factor out unexpected char error handler.
-            _ => Err(Error::JsonError("unexpected character".to_owned())),
-        })
+        Some(Err(Error::JsonError(format!(
+            "parser not implemented for '{}'",
+            self.buf[self.read_pos]
+        ))))
     }
 
     fn parse_literal<'a>(
@@ -67,7 +72,10 @@ impl<R: Read> Tokenizer<R> {
         literal: &str,
         token: JsonToken<'a>,
     ) -> Result<JsonToken, Error> {
-        let mut matched = 0;
+        // We only call parse_literal when we've already matched the first character.
+        let mut matched = 1;
+        self.read_pos += 1;
+
         while matched < literal.len() {
             if self.buffered_unread().len() == 0 {
                 match self.read_to_front_of_buffer() {
@@ -81,6 +89,7 @@ impl<R: Read> Tokenizer<R> {
                 matched += 1;
                 continue;
             }
+
             // All of the literals we use are ASCII which means any bytes in the buffer that we
             // have successfully matched were single-bye UTF-8 characters. As a result, the first
             // byte that doesn't match is not only the nth byte in the buffer but the first byte of
@@ -96,18 +105,6 @@ impl<R: Read> Tokenizer<R> {
             )));
         }
         Ok(token)
-    }
-
-    fn single_byte_token(b: u8) -> Option<JsonToken<'static>> {
-        match b {
-            b'[' => Some(JsonToken::BeginArray),
-            b']' => Some(JsonToken::EndArray),
-            b'{' => Some(JsonToken::BeginObject),
-            b'}' => Some(JsonToken::EndObject),
-            b':' => Some(JsonToken::Colon),
-            b',' => Some(JsonToken::Comma),
-            _ => None,
-        }
     }
 
     fn scan_to_content(&mut self) -> Result<bool, Error> {
