@@ -40,15 +40,7 @@ impl<R: Read> Tokenizer<R> {
         }
     }
 
-    pub fn next(&mut self) -> Option<Result<JsonToken, Error>> {
-        match self.scan_to_content() {
-            Err(err) => return Some(Err(err)),
-            Ok(false) => return None,
-            // todo: Figure out why this is necessary.
-            Ok(true) => (),
-        }
-
-        // todo: Factor this out to a function.
+    fn parse_single_char_token(&mut self) -> Option<JsonToken> {
         if let Some(tok) = match self.buf[self.read_pos] {
             b'[' => Some(JsonToken::BeginArray),
             b']' => Some(JsonToken::EndArray),
@@ -59,6 +51,20 @@ impl<R: Read> Tokenizer<R> {
             _ => None,
         } {
             self.read_pos += 1;
+            return Some(tok);
+        }
+        None
+    }
+
+    pub fn next(&mut self) -> Option<Result<JsonToken, Error>> {
+        match self.scan_to_content() {
+            Err(err) => return Some(Err(err)),
+            Ok(false) => return None,
+            // todo: Figure out why this is necessary.
+            Ok(true) => (),
+        }
+
+        if let Some(tok) = self.parse_single_char_token() {
             return Some(Ok(tok));
         }
 
