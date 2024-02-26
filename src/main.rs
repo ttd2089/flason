@@ -7,7 +7,7 @@ fn main() {
         match tokenizer.next() {
             Some(Ok(tok)) => println!("token: {:?}", tok),
             Some(Err(err)) => {
-                println!("error: {}", err);
+                println!("error: {:?}", err);
                 return;
             }
             None => break,
