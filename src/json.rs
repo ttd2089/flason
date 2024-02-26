@@ -1,3 +1,4 @@
+use std::io;
 use std::io::Read;
 
 #[derive(Debug)]
@@ -40,23 +41,11 @@ impl<R: Read> Tokenizer<R> {
     }
 
     pub fn next(&mut self) -> Option<Result<JsonToken, Error>> {
-
-        self.discard_whitespace();
-
-        while self.buffered_unread().len() == 0 {
-            // All of the data in the buffer has been consumed by returned tokens. This is most
-            // likely to occur on the first call to next or after the whole stream has been parsed
-            // successfully, but it could also mean that a read into the buffer just happened to
-            // align with a token boundary. Either way we should attempt a read to the front of the
-            // buffer to get as much data as we can without allocating.
-            match self.read_to_front_of_buffer() {
-                // Nothing left to read means we parsed everything successfully.
-                Ok(0) => return None,
-                Err(err) => return Some(Err(Error::IoError(err))),
-                Ok(n) => self.write_pos += n,
-            }
-
-            self.discard_whitespace();
+        match self.scan_to_content() {
+            Err(err) => return Some(Err(err)),
+            Ok(false) => return None,
+            // todo: Figure out why this is necessary.
+            Ok(true) => (),
         }
 
         // todo: Factor this out to a function.
@@ -82,7 +71,11 @@ impl<R: Read> Tokenizer<R> {
         })
     }
 
-    fn parse_literal<'a>(&'a mut self, literal: &str, token: JsonToken<'a>) -> Result<JsonToken, Error> {
+    fn parse_literal<'a>(
+        &'a mut self,
+        literal: &str,
+        token: JsonToken<'a>,
+    ) -> Result<JsonToken, Error> {
         let mut matched = 0;
         while matched < literal.len() {
             if self.buffered_unread().len() == 0 {
@@ -106,9 +99,34 @@ impl<R: Read> Tokenizer<R> {
             // ... unless we haven't read the entire character :/
             //
             // todo: Fix this
-            return Err(Error::JsonError(format!("unexpected byte '{}'",  self.buf[self.read_pos])));
+            return Err(Error::JsonError(format!(
+                "unexpected byte '{}'",
+                self.buf[self.read_pos]
+            )));
         }
         Ok(token)
+    }
+
+    fn scan_to_content(&mut self) -> Result<bool, Error> {
+        self.discard_whitespace();
+
+        while self.buffered_unread().len() == 0 {
+            // All of the data in the buffer has been consumed by returned tokens. This is most
+            // likely to occur on the first call to next or after the whole stream has been parsed
+            // successfully, but it could also mean that a read into the buffer just happened to
+            // align with a token boundary. Either way we should attempt a read to the front of the
+            // buffer to get as much data as we can without allocating.
+            match self.read_to_front_of_buffer() {
+                // Nothing left to read means we parsed everything successfully.
+                Ok(0) => return Ok(false),
+                Ok(n) => self.write_pos += n,
+                Err(err) => return Err(Error::IoError(err)),
+            }
+
+            self.discard_whitespace();
+        }
+
+        Ok(true)
     }
 
     fn discard_whitespace(&mut self) {
@@ -119,7 +137,7 @@ impl<R: Read> Tokenizer<R> {
                 b' ' | b'\t' | b'\n' | b'\r' => {
                     self.read_pos += 1;
                     continue;
-                },
+                }
                 _ => break,
             }
         }
@@ -128,9 +146,15 @@ impl<R: Read> Tokenizer<R> {
     fn read_to_front_of_buffer(&mut self) -> std::io::Result<usize> {
         self.read_pos = 0;
         self.write_pos = 0;
-
-        // todo: Handle interrupted.
-        self.reader.read(&mut self.buf[..])
+        loop {
+            match self.reader.read(&mut self.buf[..]) {
+                ok @ Ok(_) => return ok,
+                Err(err) => match err.kind() {
+                    io::ErrorKind::Interrupted => continue,
+                    _ => return Err(err),
+                },
+            }
+        }
     }
 
     fn buffered_unread<'a>(&'a self) -> &[u8] {
