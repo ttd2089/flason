@@ -48,16 +48,7 @@ impl<R: Read> Tokenizer<R> {
             Ok(true) => (),
         }
 
-        // todo: Factor this out to a function.
-        if let Some(tok) = match self.buf[self.read_pos] {
-            b'[' => Some(JsonToken::BeginArray),
-            b']' => Some(JsonToken::EndArray),
-            b'{' => Some(JsonToken::BeginObject),
-            b'}' => Some(JsonToken::EndObject),
-            b':' => Some(JsonToken::Colon),
-            b',' => Some(JsonToken::Comma),
-            _ => None,
-        } {
+        if let Some(tok) = Self::single_byte_token(self.buf[self.read_pos]) {
             self.read_pos += 1;
             return Some(Ok(tok));
         }
@@ -105,6 +96,18 @@ impl<R: Read> Tokenizer<R> {
             )));
         }
         Ok(token)
+    }
+
+    fn single_byte_token(b: u8) -> Option<JsonToken<'static>> {
+        match b {
+            b'[' => Some(JsonToken::BeginArray),
+            b']' => Some(JsonToken::EndArray),
+            b'{' => Some(JsonToken::BeginObject),
+            b'}' => Some(JsonToken::EndObject),
+            b':' => Some(JsonToken::Colon),
+            b',' => Some(JsonToken::Comma),
+            _ => None,
+        }
     }
 
     fn scan_to_content(&mut self) -> Result<bool, Error> {
