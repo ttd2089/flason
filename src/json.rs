@@ -24,6 +24,7 @@ pub enum Error {
 }
 
 pub struct Tokenizer<R: Read> {
+    // todo: Track position to include with tokens / errors.
     reader: R,
     buf: Vec<u8>,
     read_pos: usize,
@@ -42,29 +43,27 @@ impl<R: Read> Tokenizer<R> {
 
     pub fn next(&mut self) -> Option<Result<JsonToken, Error>> {
         match self.scan_to_content() {
+            Ok(0) => return None,
             Err(err) => return Some(Err(err)),
-            Ok(false) => return None,
-            // todo: Figure out why this is necessary.
-            Ok(true) => (),
+            _ => {}
         }
 
-        match self.buf[self.read_pos] {
-            b'[' => return Some(self.parse_literal("[", JsonToken::BeginArray)),
-            b']' => return Some(self.parse_literal("]", JsonToken::EndArray)),
-            b'{' => return Some(self.parse_literal("{", JsonToken::BeginObject)),
-            b'}' => return Some(self.parse_literal("}", JsonToken::EndObject)),
-            b':' => return Some(self.parse_literal(":", JsonToken::Colon)),
-            b',' => return Some(self.parse_literal(",", JsonToken::Comma)),
-            b't' => return Some(self.parse_literal("true", JsonToken::True)),
-            b'f' => return Some(self.parse_literal("false", JsonToken::False)),
-            b'n' => return Some(self.parse_literal("null", JsonToken::Null)),
-            _ => (),
-        }
+        let res = match self.buf[self.read_pos] {
+            b'[' => self.parse_literal("[", JsonToken::BeginArray),
+            b']' => self.parse_literal("]", JsonToken::EndArray),
+            b'{' => self.parse_literal("{", JsonToken::BeginObject),
+            b'}' => self.parse_literal("}", JsonToken::EndObject),
+            b':' => self.parse_literal(":", JsonToken::Colon),
+            b',' => self.parse_literal(",", JsonToken::Comma),
+            b't' => self.parse_literal("true", JsonToken::True),
+            b'f' => self.parse_literal("false", JsonToken::False),
+            b'n' => self.parse_literal("null", JsonToken::Null),
+            b'"' => self.parse_string(),
+            b'0'..=b'9' | b'-' => self.parse_number(),
+            _ => Err(Error::JsonError(String::from("invalid byte"))),
+        };
 
-        Some(Err(Error::JsonError(format!(
-            "parser not implemented for '{}'",
-            self.buf[self.read_pos]
-        ))))
+        Some(res)
     }
 
     fn parse_literal<'a>(
@@ -72,7 +71,9 @@ impl<R: Read> Tokenizer<R> {
         literal: &str,
         token: JsonToken<'a>,
     ) -> Result<JsonToken, Error> {
-        // We only call parse_literal when we've already matched the first character.
+        // The first byte always matches because we used it to determine which literal to parse so
+        // we can start parsing at the second byte otherwise.
+
         let mut matched = 1;
         self.read_pos += 1;
 
@@ -90,43 +91,43 @@ impl<R: Read> Tokenizer<R> {
                 continue;
             }
 
-            // All of the literals we use are ASCII which means any bytes in the buffer that we
-            // have successfully matched were single-bye UTF-8 characters. As a result, the first
-            // byte that doesn't match is not only the nth byte in the buffer but the first byte of
-            // the nth UTF-8 character. This means it's safe to get the nth character even if that
-            // character is multi-byte.
-            //
-            // ... unless we haven't read the entire character :/
-            //
-            // todo: Fix this
-            return Err(Error::JsonError(format!(
-                "unexpected byte '{}'",
-                self.buf[self.read_pos]
-            )));
+            return Err(Error::JsonError(String::from("invalid literal")));
         }
         Ok(token)
     }
 
-    fn scan_to_content(&mut self) -> Result<bool, Error> {
+    fn parse_string(&mut self) -> Result<JsonToken, Error> {
+        Err(Error::JsonError(String::from(
+            "parser not implemented for string",
+        )))
+    }
+
+    fn parse_number(&mut self) -> Result<JsonToken, Error> {
+        Err(Error::JsonError(String::from(
+            "parser not implemented for number",
+        )))
+    }
+
+    fn scan_to_content(&mut self) -> Result<usize, Error> {
         self.discard_whitespace();
 
         while self.buffered_unread().len() == 0 {
             // All of the data in the buffer has been consumed by returned tokens. This is most
             // likely to occur on the first call to next or after the whole stream has been parsed
             // successfully, but it could also mean that a read into the buffer just happened to
-            // align with a token boundary. Either way we should attempt a read to the front of the
-            // buffer to get as much data as we can without allocating.
+            // align with a token or whitespace boundary. Either way we should attempt a read to
+            // the front of the buffer to get as much data as we can without allocating.
             match self.read_to_front_of_buffer() {
                 // Nothing left to read means we parsed everything successfully.
-                Ok(0) => return Ok(false),
-                Ok(n) => self.write_pos += n,
+                Ok(0) => return Ok(0),
                 Err(err) => return Err(Error::IoError(err)),
+                Ok(n) => self.write_pos += n,
             }
 
             self.discard_whitespace();
         }
 
-        Ok(true)
+        Ok(self.write_pos - self.read_pos)
     }
 
     fn discard_whitespace(&mut self) {
